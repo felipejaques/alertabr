@@ -1,0 +1,73 @@
+services:
+  # Backend API - FastAPI
+  api:
+    build: ./backend
+    container_name: alertabr-api
+    ports:
+      - "8001:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-alertabr}:${DB_PASSWORD:-alertabr}@db:5432/${DB_NAME:-alertabr}
+      - REDIS_URL=redis://redis:6379/0
+      - DEBUG=${DEBUG:-false}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Frontend - Next.js (dev mode)
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: alertabr-web
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    restart: unless-stopped
+
+  # Database - PostgreSQL + PostGIS
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: alertabr-db
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_DB=${DB_NAME:-alertabr}
+      - POSTGRES_USER=${DB_USER:-alertabr}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-alertabr}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-alertabr} -d ${DB_NAME:-alertabr}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Cache - Redis
+  redis:
+    image: redis:7-alpine
+    container_name: alertabr-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  pgdata:
