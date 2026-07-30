@@ -258,7 +258,7 @@ docker-compose up -d
 docker-compose logs -f api
 
 # Reconstruir após mudanças no código
-docker-compose up -d --build
+docker compose build --no-cache
 
 # Parar todos os serviços
 docker-compose down
@@ -274,9 +274,6 @@ docker-compose exec api pytest
 
 # Verificar saúde dos serviços
 docker-compose ps
-
-# Buildar containers docker
-docker compose build --no-cache
 ```
 
 ### Desenvolvimento Frontend (sem Docker)

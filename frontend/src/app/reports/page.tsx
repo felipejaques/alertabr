@@ -15,6 +15,10 @@ const RiskEvolutionChart = dynamic(
   () => import("@/components/Charts/RiskEvolutionChart"),
   { ssr: false }
 );
+const AccumulatedPrecipitationChart = dynamic(
+  () => import("@/components/Charts/AccumulatedPrecipitationChart"),
+  { ssr: false }
+);
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
@@ -128,6 +132,10 @@ export default function ReportsPage() {
       {/* Gráficos */}
       {selectedMunicipality ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <AccumulatedPrecipitationChart
+            municipalityId={selectedMunicipality}
+            period={period}
+          />
           <PrecipitationChart
             municipalityId={selectedMunicipality}
             period={period}
