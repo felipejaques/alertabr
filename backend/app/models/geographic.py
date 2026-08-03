@@ -34,6 +34,7 @@ class Municipio(Base):
 
     estado = relationship("Estado", back_populates="municipios")
     estacoes = relationship("EstacaoMeteorologica", back_populates="municipio", lazy="selectin")
+    estacoes_hidrologicas = relationship("EstacaoHidrologica", back_populates="municipio", lazy="selectin")
     dados_demograficos = relationship("DadosDemograficos", back_populates="municipio", lazy="selectin")
     alertas = relationship("Alerta", back_populates="municipio", lazy="selectin")
 

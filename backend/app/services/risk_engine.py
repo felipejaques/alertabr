@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.geographic import Municipio
 from app.models.weather import EstacaoMeteorologica, MedicaoClimatica
 from app.models.demographic import DadosDemograficos
+from app.models.hydrology import EstacaoHidrologica, MedicaoHidrologica
 
 logger = logging.getLogger(__name__)
 
@@ -69,12 +70,53 @@ RISK_RULES = [
         "severity": "moderado",
         "weight": 0.2,
     },
+    # Regras hidrológicas (dados ANA)
+    {
+        "id": "river_level_attention",
+        "name": "Nível do Rio - Atenção",
+        "type": "inundacao",
+        "metric": "nivel_rio_pct_atencao",
+        "operator": ">=",
+        "threshold": 100,
+        "severity": "moderado",
+        "weight": 0.3,
+    },
+    {
+        "id": "river_level_alert",
+        "name": "Nível do Rio - Alerta",
+        "type": "inundacao",
+        "metric": "nivel_rio_pct_alerta",
+        "operator": ">=",
+        "threshold": 100,
+        "severity": "alto",
+        "weight": 0.5,
+    },
+    {
+        "id": "river_level_emergency",
+        "name": "Nível do Rio - Emergência",
+        "type": "inundacao",
+        "metric": "nivel_rio_pct_emergencia",
+        "operator": ">=",
+        "threshold": 100,
+        "severity": "critico",
+        "weight": 0.7,
+    },
+    {
+        "id": "river_level_rising_fast",
+        "name": "Nível do Rio - Subida Rápida",
+        "type": "inundacao",
+        "metric": "nivel_rio_variacao_6h",
+        "operator": ">",
+        "threshold": 0.5,
+        "severity": "alto",
+        "weight": 0.4,
+    },
 ]
 
 
 @dataclass
 class WeatherMetrics:
-    """Métricas climáticas calculadas para um município."""
+    """Métricas climáticas e hidrológicas calculadas para um município."""
 
     precipitacao_acumulada_24h: float = 0.0
     precipitacao_acumulada_72h: float = 0.0
@@ -82,6 +124,13 @@ class WeatherMetrics:
     temperatura_maxima: float = 0.0
     vento_velocidade_max: float = 0.0
     umidade_minima: float = 100.0
+    # Métricas hidrológicas (ANA)
+    nivel_rio_atual: float = 0.0
+    nivel_rio_pct_atencao: float = 0.0  # % do nível de atenção atingido
+    nivel_rio_pct_alerta: float = 0.0  # % do nível de alerta atingido
+    nivel_rio_pct_emergencia: float = 0.0  # % do nível de emergência atingido
+    nivel_rio_variacao_6h: float = 0.0  # Variação em metros nas últimas 6h
+    vazao_maxima: float = 0.0
 
 
 @dataclass
@@ -108,6 +157,9 @@ class RiskEngine:
         """Calcula índice de risco composto para um município."""
         # 1. Buscar métricas climáticas
         weather = await self._get_weather_metrics(municipio_id, db)
+
+        # 1b. Buscar métricas hidrológicas (ANA)
+        await self._enrich_with_hydrology(weather, municipio_id, db)
 
         # 2. Buscar dados geográficos
         municipio = await db.get(Municipio, municipio_id)
@@ -254,6 +306,90 @@ class RiskEngine:
         metrics.vento_velocidade_max = float(result.scalar() or 0)
 
         return metrics
+
+    async def _enrich_with_hydrology(
+        self, metrics: WeatherMetrics, municipio_id: int, db: AsyncSession
+    ) -> None:
+        """Enriquece métricas com dados hidrológicos (nível de rio, vazão)."""
+        now = datetime.now(timezone.utc)
+
+        # Buscar estações hidrológicas ativas do município
+        result = await db.execute(
+            select(EstacaoHidrologica).where(
+                EstacaoHidrologica.municipio_id == municipio_id,
+                EstacaoHidrologica.ativa == True,
+            )
+        )
+        estacoes = result.scalars().all()
+
+        if not estacoes:
+            return
+
+        max_nivel = 0.0
+        max_vazao = 0.0
+        max_pct_atencao = 0.0
+        max_pct_alerta = 0.0
+        max_pct_emergencia = 0.0
+        max_variacao = 0.0
+
+        for estacao in estacoes:
+            # Última medição de nível
+            result = await db.execute(
+                select(MedicaoHidrologica.nivel, MedicaoHidrologica.vazao)
+                .where(
+                    MedicaoHidrologica.estacao_id == estacao.id,
+                    MedicaoHidrologica.data_hora >= now - timedelta(hours=6),
+                    MedicaoHidrologica.nivel.isnot(None),
+                )
+                .order_by(MedicaoHidrologica.data_hora.desc())
+                .limit(1)
+            )
+            latest = result.first()
+
+            if not latest or latest.nivel is None:
+                continue
+
+            nivel_atual = latest.nivel
+            max_nivel = max(max_nivel, nivel_atual)
+            max_vazao = max(max_vazao, float(latest.vazao or 0))
+
+            # Calcular % dos limiares
+            if estacao.nivel_atencao and estacao.nivel_atencao > 0:
+                pct = (nivel_atual / estacao.nivel_atencao) * 100
+                max_pct_atencao = max(max_pct_atencao, pct)
+
+            if estacao.nivel_alerta and estacao.nivel_alerta > 0:
+                pct = (nivel_atual / estacao.nivel_alerta) * 100
+                max_pct_alerta = max(max_pct_alerta, pct)
+
+            if estacao.nivel_emergencia and estacao.nivel_emergencia > 0:
+                pct = (nivel_atual / estacao.nivel_emergencia) * 100
+                max_pct_emergencia = max(max_pct_emergencia, pct)
+
+            # Calcular variação de nível nas últimas 6h
+            result = await db.execute(
+                select(MedicaoHidrologica.nivel)
+                .where(
+                    MedicaoHidrologica.estacao_id == estacao.id,
+                    MedicaoHidrologica.data_hora >= now - timedelta(hours=6),
+                    MedicaoHidrologica.data_hora <= now - timedelta(hours=5),
+                    MedicaoHidrologica.nivel.isnot(None),
+                )
+                .order_by(MedicaoHidrologica.data_hora.asc())
+                .limit(1)
+            )
+            oldest = result.scalar_one_or_none()
+
+            if oldest is not None:
+                variacao = nivel_atual - oldest
+                max_variacao = max(max_variacao, variacao)
+
+        metrics.nivel_rio_atual = max_nivel
+        metrics.nivel_rio_pct_atencao = max_pct_atencao
+        metrics.nivel_rio_pct_alerta = max_pct_alerta
+        metrics.nivel_rio_pct_emergencia = max_pct_emergencia
+        metrics.nivel_rio_variacao_6h = max_variacao
+        metrics.vazao_maxima = max_vazao
 
     def _evaluate_rule(
         self,

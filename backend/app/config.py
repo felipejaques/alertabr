@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     # IBGE
     IBGE_BASE_URL: str = "https://servicodados.ibge.gov.br"
 
+    # ANA (Agência Nacional de Águas)
+    ANA_TELEMETRIA_URL: str = "http://telemetriaws1.ana.gov.br/ServiceANA.asmx"
+    ANA_INGEST_INTERVAL_HOURS: int = 2
+
 
 @lru_cache()
 def get_settings() -> Settings:

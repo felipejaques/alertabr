@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.api.routes import health, ingest, geographic, weather, risk, alerts, scenarios
+from app.api.routes import health, ingest, geographic, weather, hydrology, risk, alerts, scenarios
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -25,6 +25,7 @@ app.include_router(health.router)
 app.include_router(ingest.router)
 app.include_router(geographic.router)
 app.include_router(weather.router)
+app.include_router(hydrology.router)
 app.include_router(risk.router)
 app.include_router(alerts.router)
 app.include_router(scenarios.router)

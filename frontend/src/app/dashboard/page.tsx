@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import MapLegend from "@/components/Map/MapLegend";
 import LayerToggle from "@/components/Map/LayerToggle";
 import AlertPanel from "@/components/Alerts/AlertPanel";
+import RiverLevelPanel from "@/components/Hydrology/RiverLevelPanel";
 import MunicipalityList from "@/components/Sidebar/MunicipalityList";
 
 // Leaflet não funciona em SSR - carregar apenas no client
@@ -35,7 +36,7 @@ export default function DashboardPage() {
   } | null>(null);
   const [activeLayer, setActiveLayer] = useState("composite");
   const [riskData, setRiskData] = useState<RiskData[]>([]);
-  const [sidebarTab, setSidebarTab] = useState<"municipios" | "alertas">("municipios");
+  const [sidebarTab, setSidebarTab] = useState<"municipios" | "alertas" | "rios">("municipios");
 
   // Buscar dados de risco quando estado é selecionado
   useEffect(() => {
@@ -130,6 +131,16 @@ export default function DashboardPage() {
             >
               Alertas
             </button>
+            <button
+              onClick={() => setSidebarTab("rios")}
+              className={`flex-1 py-2 text-xs font-medium transition-colors ${
+                sidebarTab === "rios"
+                  ? "text-blue-700 border-b-2 border-blue-700 bg-blue-50"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Rios
+            </button>
           </div>
         )}
 
@@ -155,6 +166,18 @@ export default function DashboardPage() {
             <AlertPanel
               state={selectedState}
               onAlertClick={(municipioId) => {
+                const mun = riskData.find((r) => r.municipio_id === municipioId);
+                if (mun) {
+                  setSelectedMunicipality({ id: municipioId, name: mun.nome });
+                }
+              }}
+            />
+          )}
+
+          {selectedState && sidebarTab === "rios" && (
+            <RiverLevelPanel
+              state={selectedState}
+              onStationClick={(municipioId) => {
                 const mun = riskData.find((r) => r.municipio_id === municipioId);
                 if (mun) {
                   setSelectedMunicipality({ id: municipioId, name: mun.nome });

@@ -40,8 +40,8 @@ class DemographicIngestService:
                 data = response.json()
             except Exception as e:
                 logger.warning(f"API IBGE Agregados indisponível: {e}")
-                # Usar dados simulados para demo
-                return await self._seed_demo_demographics(estado.id, db)
+                # Criar registros vazios quando a API não está disponível
+                return await self._seed_empty_demographics(estado.id, db)
 
         # Processar resposta
         count = 0
@@ -97,10 +97,8 @@ class DemographicIngestService:
         logger.info(f"Ingeridos {count} registros demográficos de {uf_sigla}")
         return count
 
-    async def _seed_demo_demographics(self, estado_id: int, db: AsyncSession) -> int:
-        """Gera dados demográficos simulados para demo quando API não está disponível."""
-        import random
-
+    async def _seed_empty_demographics(self, estado_id: int, db: AsyncSession) -> int:
+        """Cria registros demográficos vazios quando a API não está disponível."""
         result = await db.execute(
             select(Municipio).where(Municipio.estado_id == estado_id)
         )
@@ -118,19 +116,22 @@ class DemographicIngestService:
 
             demo = DadosDemograficos(
                 municipio_id=mun.id,
-                populacao=random.randint(5000, 500000),
-                densidade_demografica=round(random.uniform(10, 5000), 1),
-                pct_idosos=round(random.uniform(8, 30), 1),
-                pct_baixa_renda=round(random.uniform(10, 60), 1),
-                idh=round(random.uniform(0.5, 0.85), 3),
-                pct_esgoto=round(random.uniform(0.3, 0.95), 2),
+                populacao=None,
+                densidade_demografica=None,
+                pct_idosos=None,
+                pct_baixa_renda=None,
+                idh=None,
+                pct_esgoto=None,
                 ano_referencia=2021,
             )
             db.add(demo)
             count += 1
 
         await db.commit()
-        await self._calculate_all_vulnerability(estado_id, db)
+        logger.info(
+            f"Criados {count} registros demográficos vazios (API indisponível) "
+            f"para estado_id={estado_id}"
+        )
         return count
 
     async def _calculate_all_vulnerability(self, estado_id: int, db: AsyncSession):

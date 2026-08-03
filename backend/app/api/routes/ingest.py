@@ -109,3 +109,40 @@ async def trigger_demographics_ingest(
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@router.post("/ana")
+async def trigger_ana_ingest(
+    readings: bool = False,
+    estado: str = "",
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Dispara ingestão de dados hidrológicos da ANA.
+    - Sem parâmetros: ingere inventário de estações fluviométricas
+    - Com readings=true: ingere estações + telemetria das últimas 6h
+    - Com estado: filtra estações por estado (nome completo, ex: "Santa Catarina")
+    """
+    from app.services.ana_ingest import ANAIngestService
+
+    service = ANAIngestService()
+
+    try:
+        stations_count = await service.ingest_estacoes(db, estado=estado)
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"API da ANA indisponível: {str(e)}",
+            "hint": "O web service da ANA pode estar instável. Tente novamente mais tarde.",
+        }
+
+    result = {"status": "ok", "stations_ingested": stations_count}
+
+    if readings:
+        try:
+            readings_count = await service.ingest_telemetria_recente(db, horas=6)
+            result["readings_ingested"] = readings_count
+        except Exception as e:
+            result["readings_error"] = str(e)
+
+    return result
